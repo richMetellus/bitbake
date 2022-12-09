@@ -1608,39 +1608,17 @@ class RunQueue:
         else:
             self.rqexe.finish()
 
-    def rq_dump_sigfn(self, fn, options):
-        mc = bb.runqueue.mc_from_tid(fn)
-        the_data = self.cooker.databuilder.parseRecipe(fn, self.cooker.collections[mc].get_file_appends(fn))
-        siggen = bb.parse.siggen
-        dataCaches = self.rqdata.dataCaches
-        siggen.dump_sigfn(fn, dataCaches, options)
-
     def dump_signatures(self, options):
-        fns = set()
-        bb.note("Reparsing files to collect dependency data")
+        if bb.cooker.CookerFeatures.RECIPE_SIGGEN_INFO not in self.cooker.featureset:
+            bb.fatal("The dump signatures functionality needs the RECIPE_SIGGEN_INFO feature enabled")
 
+        bb.note("Writing task signature files")
         for tid in self.rqdata.runtaskentries:
-            fn = fn_from_tid(tid)
-            fns.add(fn)
-
-        max_process = int(self.cfgData.getVar("BB_NUMBER_PARSE_THREADS") or os.cpu_count() or 1)
-        # We cannot use the real multiprocessing.Pool easily due to some local data
-        # that can't be pickled. This is a cheap multi-process solution.
-        launched = []
-        while fns:
-            if len(launched) < max_process:
-                p = Process(target=self.rq_dump_sigfn, args=(fns.pop(), options))
-                p.start()
-                launched.append(p)
-            for q in launched:
-                # The finished processes are joined when calling is_alive()
-                if not q.is_alive():
-                    launched.remove(q)
-        for p in launched:
-                p.join()
+            (mc, fn, taskname, taskfn) = split_tid_mcfn(tid)
+            dataCaches = self.rqdata.dataCaches
+            bb.parse.siggen.dump_sigtask(taskfn, taskname, dataCaches[mc].stamp[taskfn], True)
 
         bb.parse.siggen.dump_sigs(self.rqdata.dataCaches, options)
-
         return
 
     def print_diffscenetasks(self):
